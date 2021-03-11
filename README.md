@@ -15,10 +15,12 @@ SQL Queries are used to get insights from Sakila's rental database.
 customers based on the data collected. Is it possible?
 
 **SQL Queries used:**
+[Queries](queries.txt)
 
 **Data Viz and answers:**
+[Data Viz](report.pdf)
 
-## Files used
+**Files used:**
 [Sakila Database](https://downloads.mysql.com/docs/sakila-db.zip)
 ## Credits
 Udacity's team of instructors, mentors and all support personnel.
