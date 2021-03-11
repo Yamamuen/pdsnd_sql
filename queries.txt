@@ -1,0 +1,139 @@
+/* Query 1 */
+
+WITH 
+top_rented AS
+(SELECT f.title movie, COUNT(*) times_rented, 
+ NTILE(10) OVER(ORDER BY COUNT(*)) quant_rent
+FROM film f
+JOIN inventory i ON f.film_id = i.film_id
+JOIN rental r ON i.inventory_id = r.inventory_id
+GROUP BY 1),
+	
+invent AS 
+(SELECT i.film_id, f.title movie, COUNT(*) stock_qty,
+NTILE(10) OVER(ORDER BY COUNT(*)) quant_stock
+FROM inventory i
+JOIN film f ON i.film_id = f.film_id
+GROUP BY 1,2)			
+	
+SELECT t.movie, t.quant_rent, i.quant_stock , i.stock_qty, t.times_rented
+FROM top_rented t
+JOIN invent i ON t.movie = i.movie
+ORDER BY 5 DESC, 1
+LIMIT 100;
+
+
+/* ==================================================================================================================== */
+/* Query 2 */
+
+WITH rent_pay AS
+(SELECT 
+i.store_id,
+r.rental_id,
+r.rental_date,
+r.return_date,
+p.payment_date,
+p.amount
+FROM inventory i
+JOIN rental r ON i.inventory_id = r.inventory_id
+LEFT JOIN payment p ON r.rental_id = p.rental_id
+/* Left join due to some of the rentals apparently not being paid for*/
+),
+
+hist_data AS
+(SELECT 
+rent_pay.store_id store,
+rent_pay.rental_id,
+DATE_TRUNC('day',rent_pay.rental_date) rental, 
+DATE_TRUNC('day',rent_pay.return_date) return,
+DATE_TRUNC('day',rent_pay.payment_date) payment_date,
+CASE WHEN DATE_TRUNC('day',rent_pay.return_date) IS NULL AND DATE_TRUNC('day',rent_pay.payment_date) IS NULL  THEN 'not returned nor paid for'
+ WHEN DATE_TRUNC('day',rent_pay.return_date) IS NULL AND DATE_TRUNC('day',rent_pay.payment_date) IS NOT NULL  THEN 'not returned but paid for'
+ WHEN DATE_TRUNC('day',rent_pay.return_date) IS NOT NULL AND DATE_TRUNC('day',rent_pay.payment_date) IS NULL  THEN 'returned but not paid for'
+ELSE 'ok' END AS status
+FROM rent_pay)
+
+
+SELECT store,status, COUNT(*) FROM hist_data
+GROUP BY 1,2
+ORDER BY 1,2
+
+/* ==================================================================================================================== */
+/* Query 3 */
+
+(SELECT country.country, 
+COUNT(*)
+FROM rental r
+JOIN customer c ON r.customer_id = c.customer_id
+JOIN address a ON c.address_id = a.address_id
+JOIN city ON a.city_id = city.city_id
+JOIN country ON city.country_id = country.country_id
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT 3)
+UNION
+(SELECT country.country, 
+COUNT(*)
+FROM rental r
+JOIN customer c ON r.customer_id = c.customer_id
+JOIN address a ON c.address_id = a.address_id
+JOIN city ON a.city_id = city.city_id
+JOIN country ON city.country_id = country.country_id
+GROUP BY 1
+ORDER BY 2 ASC
+LIMIT 3)
+ORDER BY 2 DESC
+
+/* ==================================================================================================================== */
+/* Query 4 */
+
+WITH t1 AS
+(
+SELECT cust.first_name ||' '||cust.last_name client,r.rental_id id,f.title, c.name
+FROM category c
+JOIN film_category fc ON c.category_id = fc.category_id
+JOIN film f ON fc.film_id = f.film_id
+JOIN inventory i ON f.film_id = i.film_id
+JOIN rental r ON i.inventory_id = r.inventory_id
+JOIN customer cust ON r.customer_id = cust.customer_id),
+
+t2 AS
+(
+SELECT name, title,COUNT(*) times_rented,
+ROW_NUMBER(*) OVER (PARTITION BY name ORDER BY COUNT(*) DESC) rank_categ
+FROM t1
+GROUP BY 1,2),
+
+client_categ AS
+(
+SELECT client, name category,COUNT(*) count
+FROM t1
+GROUP BY 1, 2),
+
+fav_list AS
+(SELECT client_categ.* FROM client_categ
+JOIN (SELECT client, MAX(count) fav FROM client_categ GROUP BY 1) max
+ON (client_categ.client = max.client AND client_categ.count = max.fav)
+ORDER BY 1)
+/* the code above returns each clients favorte categories. Some clients have more than one favorite genre */
+
+SELECT t2.title suggestion,
+t2.name categ
+FROM t2
+WHERE t2.title NOT IN
+(SELECT t1.title
+FROM t1
+WHERE t1.client = 'Adam Gooch')
+AND t2.name = 
+(SELECT category FROM fav_list WHERE client ='Adam Gooch' ORDER BY RANDOM() LIMIT 1)
+ORDER BY t2.rank_categ
+LIMIT 1
+/* Changing 'Adam Gooch' above for any other client will work.
+The Query above identifies the customer's favorite genre based on his/her
+history of rentals. If it's a tie between a couple of genres it will randomly
+select one and make a suggestion. For instance, Adam Gooch is fond of the
+categories: Children, Foreign, Horror. The query will randomly choose between
+them and make a title suggestion accordingly. Furthermore, the title suggestion is not random.
+The titles are ranked both by genre and popularity. Meaning the most popular of the titles
+associated with the generated genre will be chosen. If the title was already rented out by
+said client, the query then chooses the second best rated title in that genre and so on.*/
